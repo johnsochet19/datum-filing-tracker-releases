@@ -1,0 +1,40 @@
+name: Publish installer
+
+on:
+  push:
+    branches: ["incoming"]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: incoming
+      - name: Reassemble and verify the installer
+        run: |
+          set -euo pipefail
+          EXE=$(jq -r .exe manifest.json)
+          cat "$EXE".part* > "$EXE"
+          sha256sum -c "$EXE.sha256"
+          rm -f "$EXE".part*
+          ls -la
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=$(jq -r .tag manifest.json)
+          EXE=$(jq -r .exe manifest.json)
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" -y --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target main \
+            --title "Datum Filing Tracker $TAG" \
+            --notes "Windows installer. Installed copies update themselves from here (sidebar: Check for updates, or Help > Check for updates)." \
+            "$EXE" "$EXE.blockmap" latest.yml
+      - name: Tidy up the hand-off branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git push origin --delete incoming || true
